@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # ============================================================
-# chain_proxy.sh 鈥?singbox-lite 閾惧紡浠ｇ悊妯″潡
-# 鍔熻兘锛氳緭鍏ヤ笅涓€璺充唬鐞嗗湴鍧€锛屽皢 AI 娴侀噺鍒嗘祦杩囧幓
-# 鍙嫭绔嬭繍琛岋紝涔熷彲鐢?singbox.sh 杩涢樁鑿滃崟璋冪敤
+# chain_proxy.sh — singbox-lite 链式代理模块
+# 功能：输入下一跳代理地址，将 AI 流量分流过去
+# 可独立运行，也可由 singbox.sh 进阶菜单调用
 # ============================================================
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
@@ -13,7 +13,7 @@ CLASH_YAML="${SINGBOX_DIR}/clash.yaml"
 CHAIN_META="${SINGBOX_DIR}/chain_meta.json"
 CHAIN_ROUTE_TAG="chain-ai"
 
-# ---- 棰滆壊 ----
+# ---- 颜色 ----
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -21,26 +21,27 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 ORANGE='\033[0;33m'
 
-_info()  { echo -e "${CYAN}[淇℃伅] $1${NC}" >&2; }
-_success() { echo -e "${GREEN}[鎴愬姛] $1${NC}" >&2; }
-_warn()  { echo -e "${YELLOW}[娉ㄦ剰] $1${NC}" >&2; }
-_error() { echo -e "${RED}[閿欒] $1${NC}" >&2; }
+_info()  { echo -e "${CYAN}[信息] $1${NC}" >&2; }
+_success() { echo -e "${GREEN}[成功] $1${NC}" >&2; }
+_warn()  { echo -e "${YELLOW}[注意] $1${NC}" >&2; }
+_error() { echo -e "${RED}[错误] $1${NC}" >&2; }
 
 _check_root() {
     if [[ $EUID -ne 0 ]]; then
-        _error "姝よ剼鏈繀椤讳互 root 鏉冮檺杩愯銆?
+        _error "此脚本必须以 root 权限运行。"
         exit 1
     fi
 }
 
-# ---- 浠庣埗鑴氭湰缁ф壙鍑芥暟锛堣嫢宸?source锛?---
-# 鑻ョ嫭绔嬭繍琛岋紝瀹氫箟鏈€灏忓厹搴?if ! declare -f _atomic_modify_json >/dev/null 2>&1; then
+# ---- 从父脚本继承函数（若已 source）----
+# 若独立运行，定义最小兜底
+if ! declare -f _atomic_modify_json >/dev/null 2>&1; then
     _atomic_modify_json() {
         local file="$1" filter="$2"
         [ ! -f "$file" ] && return 1
         local tmp="${file}.tmp"
         if jq "$filter" "$file" > "$tmp"; then mv "$tmp" "$file"
-        else _error "淇敼JSON澶辫触: $file"; rm -f "$tmp"; return 1; fi
+        else _error "修改JSON失败: $file"; rm -f "$tmp"; return 1; fi
     }
 fi
 
@@ -61,7 +62,7 @@ if ! declare -f _get_public_ip >/dev/null 2>&1; then
     }
 fi
 
-# ---- 閾炬帴瑙ｆ瀽锛堝唴宓岋紝閬垮厤 parser.sh 鍥炴樉鍒?stdout 骞叉壈锛?---
+# ---- 链接解析（内嵌，避免 parser.sh 回显到 stdout 干扰）----
 _chain_parse_link() {
     local link="$1"
     case "$link" in
@@ -76,14 +77,16 @@ _chain_parse_link() {
     esac
 }
 
-# ---- 婵€杩涚増 AI 鍩熷悕鍒楄〃 ----
+# ---- 激进版 AI 域名列表 ----
 _CHAIN_AI_DOMAINS=(
-    # === Google AI 鏍稿績 ===
-    "google.com"               # 鍏ㄧ珯瑕嗙洊
-    "googleapis.com"           # 鎵€鏈?Google API
-    "gstatic.com"              # Google 闈欐€佽祫婧?    "googleusercontent.com"    # 鐢ㄦ埛鍐呭锛堝惈 Gemini 鍥剧墖鐢熸垚锛?    "1e100.net"                # Google 鏈嶅姟鍣ㄥ熀纭€璁炬柦
+    # === Google AI 核心 ===
+    "google.com"               # 全站覆盖
+    "googleapis.com"           # 所有 Google API
+    "gstatic.com"              # Google 静态资源
+    "googleusercontent.com"    # 用户内容（含 Gemini 图片生成）
+    "1e100.net"                # Google 服务器基础设施
 
-    # === Firebase / Android GMS (Gemini 蹇呴渶) ===
+    # === Firebase / Android GMS (Gemini 必需) ===
     "firebaseio.com"
     "firebaseapp.com"
     "app-measurement.com"
@@ -101,14 +104,14 @@ _CHAIN_AI_DOMAINS=(
     "anthropic.com"
     "claude.ai"
 
-    # === Google AI 瀛愬煙鍚嶏紙鍐椾綑鍏滃簳锛?===
+    # === Google AI 子域名（冗余兜底） ===
     "deepmind.com"
     "makersuite.google.com"
     "aistudio.google.com"
     "ai.google.dev"
     "bard.google.com"
 
-    # === 鍏朵粬 AI 骞冲彴 ===
+    # === 其他 AI 平台 ===
     "perplexity.ai"
     "groq.com"
     "deepseek.com"
@@ -125,7 +128,7 @@ _CHAIN_AI_DOMAINS=(
     "huggingface.co"
     "civitai.com"
 
-    # === AI 缂栫▼宸ュ叿 ===
+    # === AI 编程工具 ===
     "githubcopilot.com"
     "cursor.sh"
     "windsurf.com"
@@ -134,7 +137,7 @@ _CHAIN_AI_DOMAINS=(
     "sourcegraph.com"
 )
 
-# ---- 鍩熷悕鍏抽敭璇嶅厹搴?----
+# ---- 域名关键词兜底 ----
 _CHAIN_AI_KEYWORDS=(
     "gemini"
     "generativelanguage"
@@ -146,7 +149,7 @@ _CHAIN_AI_KEYWORDS=(
     "colab"
 )
 
-# ---- 鐘舵€佹枃浠剁鐞?----
+# ---- 状态文件管理 ----
 _chain_load_state() {
     [ -f "$CHAIN_META" ] && jq '.' "$CHAIN_META" 2>/dev/null || echo '{"enabled": false, "nodes": {}}'
 }
@@ -155,7 +158,7 @@ _chain_save_state() {
     echo "$1" | jq '.' > "$CHAIN_META" 2>/dev/null
 }
 
-# ---- 瑙ｆ瀽閾炬帴骞剁敓鎴?outbound ----
+# ---- 解析链接并生成 outbound ----
 _chain_build_outbound() {
     local link="$1"
     local name="$2"
@@ -163,32 +166,34 @@ _chain_build_outbound() {
     raw_json=$(_chain_parse_link "$link")
 
     [ -z "$raw_json" ] || [ "$raw_json" == "{}" ] && {
-        _error "鏃犳硶瑙ｆ瀽閾炬帴: $link"
+        _error "无法解析链接: $link"
         return 1
     }
 
-    # 鏇挎崲 tag 涓哄敮涓€鏍囪瘑
+    # 替换 tag 为唯一标识
     local outbound
     outbound=$(echo "$raw_json" | jq --arg tag "$CHAIN_ROUTE_TAG" '
         .tag = $tag |
         .detour = "direct-out"
     ')
 
-    [ -z "$outbound" ] && { _error "鐢熸垚 outbound 澶辫触"; return 1; }
+    [ -z "$outbound" ] && { _error "生成 outbound 失败"; return 1; }
     echo "$outbound"
 }
 
-# ---- 鐢熸垚璺敱瑙勫垯 ----
+# ---- 生成路由规则 ----
 _chain_build_rules() {
     local rules_json="[]"
 
-    # 1. 绮惧尮閰嶅煙鍚嶏紙domain_suffix锛?    for domain in "${_CHAIN_AI_DOMAINS[@]}"; do
+    # 1. 精匹配域名（domain_suffix）
+    for domain in "${_CHAIN_AI_DOMAINS[@]}"; do
         rules_json=$(echo "$rules_json" | jq --arg domain "$domain" \
             '. + [{domain_suffix: [$domain], outbound: $CHAIN_TAG}]' \
             --arg CHAIN_TAG "$CHAIN_ROUTE_TAG")
     done
 
-    # 2. 鍩熷悕鍏抽敭璇嶅厹搴曪紙domain_keyword锛?    local kw_json="[]"
+    # 2. 域名关键词兜底（domain_keyword）
+    local kw_json="[]"
     for kw in "${_CHAIN_AI_KEYWORDS[@]}"; do
         kw_json=$(echo "$kw_json" | jq --arg kw "$kw" '. + [$kw]')
     done
@@ -198,60 +203,64 @@ _chain_build_rules() {
     echo "$rules_json"
 }
 
-# ---- 娣诲姞閾惧紡浠ｇ悊鑺傜偣 ----
+# ---- 添加链式代理节点 ----
 _chain_add_node() {
-    _info "========== 娣诲姞閾惧紡浠ｇ悊鑺傜偣 =========="
+    _info "========== 添加链式代理节点 =========="
     echo ""
-    _info "鏀寔鏍煎紡: ss:// | vless:// | vmess:// | trojan:// | hy2:// | tuic:// | socks5://"
-    _info "绀轰緥: ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNToxMjM0NTY@1.2.3.4:8388#涓嬩竴璺?
+    _info "支持格式: ss:// | vless:// | vmess:// | trojan:// | hy2:// | tuic:// | socks5://"
+    _info "示例: ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNToxMjM0NTY@1.2.3.4:8388#下一跳"
     echo ""
-    read -rp "璇疯緭鍏ヤ笅涓€璺充唬鐞嗛摼鎺? " next_hop_link
+    read -rp "请输入下一跳代理链接: " next_hop_link
 
-    [ -z "$next_hop_link" ] && { _warn "鏈緭鍏ラ摼鎺ワ紝宸插彇娑堛€?; return 0; }
+    [ -z "$next_hop_link" ] && { _warn "未输入链接，已取消。"; return 0; }
 
-    # 鎻愬彇鑺傜偣鍚?    local node_name=""
+    # 提取节点名
+    local node_name=""
     if [[ "$next_hop_link" == *"#"* ]]; then
         node_name=$(_url_decode "${next_hop_link##*#}")
     else
-        node_name="涓嬩竴璺?$(date +%s)"
+        node_name="下一跳-$(date +%s)"
     fi
 
-    _info "瑙ｆ瀽閾炬帴: ${node_name} ..."
+    _info "解析链接: ${node_name} ..."
     local outbound
     outbound=$(_chain_build_outbound "$next_hop_link" "$node_name")
 
     [ $? -ne 0 ] || [ -z "$outbound" ] && {
-        _error "瑙ｆ瀽澶辫触锛岃妫€鏌ラ摼鎺ユ牸寮忋€?
+        _error "解析失败，请检查链接格式。"
         return 1
     }
 
-    # 鏄剧ず瑙ｆ瀽缁撴灉
+    # 显示解析结果
     echo ""
-    _info "瑙ｆ瀽缁撴灉:"
+    _info "解析结果:"
     echo "$outbound" | jq '{type, server, server_port, tls: .tls.enabled // false, transport: .transport.type // "direct"}'
     echo ""
 
-    read -rp "纭娣诲姞锛焄Y/n]: " confirm
-    [[ "$confirm" == "n" || "$confirm" == "N" ]] && { _warn "宸插彇娑堛€?; return 0; }
+    read -rp "确认添加？[Y/n]: " confirm
+    [[ "$confirm" == "n" || "$confirm" == "N" ]] && { _warn "已取消。"; return 0; }
 
-    # 澶囦唤閰嶇疆
+    # 备份配置
     cp "$CONFIG_FILE" "${CONFIG_FILE}.chain.bak" 2>/dev/null
 
-    # 鍒犻櫎鏃ч摼寮忎唬鐞?outbound锛堣嫢瀛樺湪锛?    _atomic_modify_json "$CONFIG_FILE" "del(.outbounds[] | select(.tag == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
+    # 删除旧链式代理 outbound（若存在）
+    _atomic_modify_json "$CONFIG_FILE" "del(.outbounds[] | select(.tag == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
 
-    # 娣诲姞鏂?outbound
+    # 添加新 outbound
     _atomic_modify_json "$CONFIG_FILE" ".outbounds += [${outbound}]"
 
-    # 绉婚櫎鏃ч摼寮忚矾鐢辫鍒?    _atomic_modify_json "$CONFIG_FILE" "del(.route.rules[] | select(.outbound == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
+    # 移除旧链式路由规则
+    _atomic_modify_json "$CONFIG_FILE" "del(.route.rules[] | select(.outbound == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
 
-    # 娣诲姞 AI 璺敱瑙勫垯锛堟彃鍏ュ埌 rule_set 瑙勫垯涔嬪墠锛屽嵆浼樺厛绾ф渶楂橈級
+    # 添加 AI 路由规则（插入到 rule_set 规则之前，即优先级最高）
     local rules
     rules=$(_chain_build_rules)
     local rule_array
     rule_array=$(echo "$rules" | jq -c '.')
     _atomic_modify_json "$CONFIG_FILE" ".route.rules = (${rule_array} + .route.rules)"
 
-    # 淇濆瓨鍏冩暟鎹?    local state
+    # 保存元数据
+    local state
     state=$(_chain_load_state)
     state=$(echo "$state" | jq --arg name "$node_name" --arg link "$next_hop_link" --arg outbound "$outbound" '
         .enabled = true |
@@ -264,8 +273,9 @@ _chain_add_node() {
     ')
     _chain_save_state "$state"
 
-    # 鏇存柊 Clash YAML锛堝瀛樺湪锛?    if [ -f "${SINGBOX_DIR}/clash.yaml" ] && command -v "$YQ_BINARY" &>/dev/null; then
-        _info "鍚屾鍒?Clash YAML..."
+    # 更新 Clash YAML（如存在）
+    if [ -f "${SINGBOX_DIR}/clash.yaml" ] && command -v "$YQ_BINARY" &>/dev/null; then
+        _info "同步到 Clash YAML..."
         export YQ_BIN="${YQ_BINARY:-/usr/local/bin/yq}"
         local clash_proxy
         clash_proxy=$(echo "$outbound" | jq --arg name "$CHAIN_ROUTE_TAG" '
@@ -277,34 +287,35 @@ _chain_add_node() {
             del(.tag)
         ') 2>/dev/null
         if [ -n "$clash_proxy" ]; then
-            # 纭繚鏈夊搴旂殑浠ｇ悊缁?            if ! "$YQ_BIN" eval '.proxy-groups[] | select(.name == "AI閾惧紡")' "$CLASH_YAML" 2>/dev/null | grep -q .; then
-                "$YQ_BIN" eval -i '.proxy-groups += [{"name":"AI閾惧紡","type":"select","proxies":["DIRECT"]}]' "$CLASH_YAML" 2>/dev/null
+            # 确保有对应的代理组
+            if ! "$YQ_BIN" eval '.proxy-groups[] | select(.name == "AI链式")' "$CLASH_YAML" 2>/dev/null | grep -q .; then
+                "$YQ_BIN" eval -i '.proxy-groups += [{"name":"AI链式","type":"select","proxies":["DIRECT"]}]' "$CLASH_YAML" 2>/dev/null
             fi
         fi
     fi
 
-    _success "閾惧紡浠ｇ悊宸叉坊鍔狅紒"
-    _success "鑺傜偣鍚嶇О: ${node_name}"
-    _success "鍑虹珯鏍囩: ${CHAIN_ROUTE_TAG}"
+    _success "链式代理已添加！"
+    _success "节点名称: ${node_name}"
+    _success "出站标签: ${CHAIN_ROUTE_TAG}"
     echo ""
     _warn "=============================="
-    _warn "| 璇烽噸鍚?sing-box 浣块厤缃敓鏁?|"
-    _warn "| 鎵ц: sing-box restart     |"
+    _warn "| 请重启 sing-box 使配置生效 |"
+    _warn "| 执行: sing-box restart     |"
     _warn "=============================="
     echo ""
 
-    read -rp "鏄惁绔嬪嵆閲嶅惎 sing-box锛焄Y/n]: " do_restart
+    read -rp "是否立即重启 sing-box？[Y/n]: " do_restart
     [[ "$do_restart" != "n" && "$do_restart" != "N" ]] && {
-        _info "姝ｅ湪閲嶅惎 sing-box..."
+        _info "正在重启 sing-box..."
         systemctl restart sing-box 2>/dev/null || rc-service sing-box restart 2>/dev/null || {
-            _warn "鏃犳硶鑷姩閲嶅惎锛岃鎵嬪姩閲嶅惎 sing-box銆?
+            _warn "无法自动重启，请手动重启 sing-box。"
         }
     }
 }
 
-# ---- 鏌ョ湅鐘舵€?----
+# ---- 查看状态 ----
 _chain_show_status() {
-    _info "========== 閾惧紡浠ｇ悊鐘舵€?=========="
+    _info "========== 链式代理状态 =========="
     echo ""
 
     local state
@@ -313,83 +324,83 @@ _chain_show_status() {
     local enabled
     enabled=$(echo "$state" | jq -r '.enabled // false')
     local current
-    current=$(echo "$state" | jq -r '.current // "鏃?')
+    current=$(echo "$state" | jq -r '.current // "无"')
 
-    echo -e "鐘舵€? $([ "$enabled" == "true" ] && echo -e "${GREEN}宸插惎鐢?{NC}" || echo -e "${RED}宸茬鐢?{NC}")"
-    echo -e "褰撳墠鑺傜偣: ${CYAN}${current}${NC}"
+    echo -e "状态: $([ "$enabled" == "true" ] && echo -e "${GREEN}已启用${NC}" || echo -e "${RED}已禁用${NC}")"
+    echo -e "当前节点: ${CYAN}${current}${NC}"
     echo ""
 
-    # 妫€鏌ラ厤缃枃浠朵腑鏄惁瀛樺湪閾惧紡 outbound
+    # 检查配置文件中是否存在链式 outbound
     if [ -f "$CONFIG_FILE" ]; then
         local has_chain
         has_chain=$(jq -r '.outbounds[] | select(.tag == $tag) | .type' --arg tag "$CHAIN_ROUTE_TAG" "$CONFIG_FILE" 2>/dev/null)
         [ -n "$has_chain" ] && {
-            echo "鈹屸攢 Outbound 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
+            echo "┌─ Outbound ─────────────────────────────────"
             jq '.outbounds[] | select(.tag == $tag)' --arg tag "$CHAIN_ROUTE_TAG" "$CONFIG_FILE" | \
-                jq '{绫诲瀷: .type, 鏈嶅姟鍣? .server, 绔彛: .server_port, TLS: (.tls.enabled // false)}'
+                jq '{类型: .type, 服务器: .server, 端口: .server_port, TLS: (.tls.enabled // false)}'
         }
 
         local has_rules
         has_rules=$(jq -r '[.route.rules[] | select(.outbound == $tag)] | length' --arg tag "$CHAIN_ROUTE_TAG" "$CONFIG_FILE" 2>/dev/null)
         [ "$has_rules" -gt 0 ] 2>/dev/null && {
-            echo "鈹溾攢 Route Rules 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
-            echo -e "  鍒嗘祦瑙勫垯鏁? ${CYAN}${has_rules}${NC} 鏉?
+            echo "├─ Route Rules ───────────────────────────────"
+            echo -e "  分流规则数: ${CYAN}${has_rules}${NC} 条"
             echo ""
-            echo "  瑕嗙洊鍩熷悕 (鍓?0):"
+            echo "  覆盖域名 (前20):"
             jq -r '.route.rules[] | select(.outbound == $tag) | .domain_suffix[]?' --arg tag "$CHAIN_ROUTE_TAG" "$CONFIG_FILE" 2>/dev/null | head -20 | sed 's/^/    /'
         }
-        echo "鈹斺攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
+        echo "└────────────────────────────────────────────"
     else
-        _warn "閰嶇疆鏂囦欢 ${CONFIG_FILE} 涓嶅瓨鍦ㄣ€?
+        _warn "配置文件 ${CONFIG_FILE} 不存在。"
     fi
     echo ""
 
-    # 鏄剧ず鍘嗗彶鑺傜偣
+    # 显示历史节点
     local node_count
     node_count=$(echo "$state" | jq '.nodes | length // 0' 2>/dev/null)
     [ "$node_count" -gt 0 ] 2>/dev/null && {
-        echo -e "${CYAN}鍘嗗彶鑺傜偣 (${node_count}):${NC}"
-        echo "$state" | jq -r '.nodes | to_entries[] | "  [\(.key)] \(.value.name) 鈥?\(.value.added_at)"' 2>/dev/null
+        echo -e "${CYAN}历史节点 (${node_count}):${NC}"
+        echo "$state" | jq -r '.nodes | to_entries[] | "  [\(.key)] \(.value.name) — \(.value.added_at)"' 2>/dev/null
         echo ""
     }
 }
 
-# ---- 绠＄悊 AI 鍩熷悕 ----
+# ---- 管理 AI 域名 ----
 _chain_manage_domains() {
     while true; do
         echo ""
-        _info "========== 绠＄悊鍒嗘祦鍩熷悕 =========="
+        _info "========== 管理分流域名 =========="
         echo ""
-        echo "褰撳墠 AI 鍩熷悕 (${#_CHAIN_AI_DOMAINS[@]} 涓?:"
-        echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
+        echo "当前 AI 域名 (${#_CHAIN_AI_DOMAINS[@]} 个):"
+        echo "────────────────────────────────────────────"
         local i=1
         for d in "${_CHAIN_AI_DOMAINS[@]}"; do
             printf "  %2d. %s\n" "$i" "$d"
             ((i++))
         done
-        echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
+        echo "────────────────────────────────────────────"
         echo ""
-        echo "鍏抽敭璇嶅厹搴?(${#_CHAIN_AI_KEYWORDS[@]} 涓?:"
+        echo "关键词兜底 (${#_CHAIN_AI_KEYWORDS[@]} 个):"
         echo "  ${_CHAIN_AI_KEYWORDS[*]}"
         echo ""
-        echo "  1. 娣诲姞鑷畾涔夊煙鍚?
-        echo "  2. 鍒犻櫎鍩熷悕"
-        echo "  3. 鎭㈠榛樿鍩熷悕鍒楄〃"
-        echo "  0. 杩斿洖"
+        echo "  1. 添加自定义域名"
+        echo "  2. 删除域名"
+        echo "  3. 恢复默认域名列表"
+        echo "  0. 返回"
         echo ""
-        read -rp "璇烽€夋嫨 [0-3]: " choice
+        read -rp "请选择 [0-3]: " choice
 
         case "$choice" in
             1)
-                read -rp "杈撳叆瑕佽拷鍔犵殑鍩熷悕 (濡?example.com): " new_domain
+                read -rp "输入要追加的域名 (如 example.com): " new_domain
                 [ -z "$new_domain" ] && continue
                 _CHAIN_AI_DOMAINS+=("$new_domain")
-                _info "宸叉坊鍔? ${new_domain}"
-                _info "鈿?淇敼浠呭鏈浼氳瘽鐢熸晥锛屼笅娆¤繍琛岃剼鏈皢鎭㈠榛樿鍒楄〃銆?
-                _info "鈿?濡傞渶姘镐箙淇敼锛岃缂栬緫鑴氭湰涓殑 _CHAIN_AI_DOMAINS 鏁扮粍銆?
+                _info "已添加: ${new_domain}"
+                _info "⚠ 修改仅对本次会话生效，下次运行脚本将恢复默认列表。"
+                _info "⚠ 如需永久修改，请编辑脚本中的 _CHAIN_AI_DOMAINS 数组。"
                 ;;
             2)
-                read -rp "杈撳叆瑕佸垹闄ょ殑鍩熷悕: " del_domain
+                read -rp "输入要删除的域名: " del_domain
                 [ -z "$del_domain" ] && continue
                 local found=false
                 local new_domains=()
@@ -399,25 +410,25 @@ _chain_manage_domains() {
                 done
                 if $found; then
                     _CHAIN_AI_DOMAINS=("${new_domains[@]}")
-                    _info "宸插垹闄? ${del_domain}"
+                    _info "已删除: ${del_domain}"
                 else
-                    _warn "鏈壘鍒板煙鍚? ${del_domain}"
+                    _warn "未找到域名: ${del_domain}"
                 fi
                 ;;
             3)
-                _info "璇风紪杈戣剼鏈枃浠讹紝灏?_CHAIN_AI_DOMAINS 鏁扮粍鏇挎崲涓洪粯璁ゅ€煎悗閲嶆柊杩愯銆?
+                _info "请编辑脚本文件，将 _CHAIN_AI_DOMAINS 数组替换为默认值后重新运行。"
                 ;;
             0)
                 return
                 ;;
-            *) _warn "鏃犳晥閫夋嫨銆? ;;
+            *) _warn "无效选择。" ;;
         esac
     done
 }
 
-# ---- 鍒犻櫎閾惧紡浠ｇ悊 ----
+# ---- 删除链式代理 ----
 _chain_remove() {
-    _info "========== 鍒犻櫎閾惧紡浠ｇ悊 =========="
+    _info "========== 删除链式代理 =========="
     echo ""
 
     local state
@@ -426,34 +437,35 @@ _chain_remove() {
     has_chain=$(jq -r '.outbounds[] | select(.tag == $tag) | .type' --arg tag "$CHAIN_ROUTE_TAG" "$CONFIG_FILE" 2>/dev/null)
 
     if [ -z "$has_chain" ]; then
-        _warn "褰撳墠娌℃湁閰嶇疆閾惧紡浠ｇ悊銆?
+        _warn "当前没有配置链式代理。"
         return 0
     fi
 
-    echo "灏嗗垹闄や互涓嬪唴瀹?"
+    echo "将删除以下内容:"
     echo "  - outbound: ${CHAIN_ROUTE_TAG}"
-    echo "  - 鎵€鏈?AI 鍒嗘祦璺敱瑙勫垯"
+    echo "  - 所有 AI 分流路由规则"
     echo ""
 
-    read -rp "纭鍒犻櫎锛熻緭鍏?yes 纭: " confirm
-    [ "$confirm" != "yes" ] && { _warn "宸插彇娑堛€?; return 0; }
+    read -rp "确认删除？输入 yes 确认: " confirm
+    [ "$confirm" != "yes" ] && { _warn "已取消。"; return 0; }
 
     cp "$CONFIG_FILE" "${CONFIG_FILE}.chain.bak" 2>/dev/null
 
-    # 鍒犻櫎 outbound
+    # 删除 outbound
     _atomic_modify_json "$CONFIG_FILE" "del(.outbounds[] | select(.tag == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
 
-    # 鍒犻櫎璺敱瑙勫垯
+    # 删除路由规则
     _atomic_modify_json "$CONFIG_FILE" "del(.route.rules[] | select(.outbound == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
 
-    # 鏇存柊鐘舵€佹枃浠?    state=$(echo "$state" | jq '.enabled = false')
+    # 更新状态文件
+    state=$(echo "$state" | jq '.enabled = false')
     _chain_save_state "$state"
 
-    _success "閾惧紡浠ｇ悊宸插垹闄ゃ€?
-    _warn "璇烽噸鍚?sing-box 浣块厤缃敓鏁堛€?
+    _success "链式代理已删除。"
+    _warn "请重启 sing-box 使配置生效。"
 }
 
-# ---- 鍚敤/绂佺敤 ----
+# ---- 启用/禁用 ----
 _chain_toggle() {
     local state
     state=$(_chain_load_state)
@@ -461,29 +473,30 @@ _chain_toggle() {
     enabled=$(echo "$state" | jq -r '.enabled // false')
 
     if [ "$enabled" == "true" ]; then
-        _info "褰撳墠鐘舵€? 宸插惎鐢?鈫?绂佺敤涓?.."
-        # 绂佺敤锛氫粎绉婚櫎璺敱瑙勫垯锛屼繚鐣?outbound
+        _info "当前状态: 已启用 → 禁用中..."
+        # 禁用：仅移除路由规则，保留 outbound
         cp "$CONFIG_FILE" "${CONFIG_FILE}.chain.bak" 2>/dev/null
         _atomic_modify_json "$CONFIG_FILE" "del(.route.rules[] | select(.outbound == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
         state=$(echo "$state" | jq '.enabled = false')
         _chain_save_state "$state"
-        _success "閾惧紡浠ｇ悊宸茬鐢紙瑙勫垯宸茬Щ闄わ紝鑺傜偣淇濈暀锛夈€?
+        _success "链式代理已禁用（规则已移除，节点保留）。"
     else
-        _info "褰撳墠鐘舵€? 宸茬鐢?鈫?鍚敤涓?.."
+        _info "当前状态: 已禁用 → 启用中..."
 
-        # 妫€鏌?outbound 鏄惁瀛樺湪
+        # 检查 outbound 是否存在
         local has_outbound
         has_outbound=$(jq -r '.outbounds[] | select(.tag == $tag) | .type' --arg tag "$CHAIN_ROUTE_TAG" "$CONFIG_FILE" 2>/dev/null)
         if [ -z "$has_outbound" ]; then
-            _error "鏈壘鍒伴摼寮忎唬鐞嗚妭鐐癸紝璇峰厛娣诲姞鑺傜偣銆?
+            _error "未找到链式代理节点，请先添加节点。"
             return 1
         fi
 
         cp "$CONFIG_FILE" "${CONFIG_FILE}.chain.bak" 2>/dev/null
 
-        # 鍏堟竻鏃ц鍒?        _atomic_modify_json "$CONFIG_FILE" "del(.route.rules[] | select(.outbound == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
+        # 先清旧规则
+        _atomic_modify_json "$CONFIG_FILE" "del(.route.rules[] | select(.outbound == \"$CHAIN_ROUTE_TAG\"))" 2>/dev/null
 
-        # 閲嶆柊娣诲姞瑙勫垯
+        # 重新添加规则
         local rules
         rules=$(_chain_build_rules)
         local rule_array
@@ -492,47 +505,47 @@ _chain_toggle() {
 
         state=$(echo "$state" | jq '.enabled = true')
         _chain_save_state "$state"
-        _success "閾惧紡浠ｇ悊宸插惎鐢ㄣ€?
+        _success "链式代理已启用。"
     fi
 
-    _warn "璇烽噸鍚?sing-box 浣块厤缃敓鏁堛€?
+    _warn "请重启 sing-box 使配置生效。"
 }
 
-# ---- 鏄剧ず璺敱娴嬭瘯淇℃伅 ----
+# ---- 显示路由测试信息 ----
 _chain_test_info() {
-    _info "========== 璺敱娴嬭瘯 =========="
+    _info "========== 路由测试 =========="
     echo ""
-    echo "閲嶅惎 sing-box 鍚庯紝浣跨敤浠ヤ笅鍛戒护楠岃瘉:"
+    echo "重启 sing-box 后，使用以下命令验证:"
     echo ""
-    echo "  # 娴嬭瘯 Gemini 杩炴帴"
-    echo "  curl -x http://127.0.0.1:<HTTP浠ｇ悊绔彛> https://gemini.google.com/ -I"
+    echo "  # 测试 Gemini 连接"
+    echo "  curl -x http://127.0.0.1:<HTTP代理端口> https://gemini.google.com/ -I"
     echo ""
-    echo "  # 娴嬭瘯 OpenAI"
-    echo "  curl -x http://127.0.0.1:<HTTP浠ｇ悊绔彛> https://api.openai.com/v1/models -I"
+    echo "  # 测试 OpenAI"
+    echo "  curl -x http://127.0.0.1:<HTTP代理端口> https://api.openai.com/v1/models -I"
     echo ""
-    echo "  # 鏌ョ湅 sing-box 鏃ュ織锛岀‘璁ゆ祦閲忚蛋閾惧紡浠ｇ悊"
+    echo "  # 查看 sing-box 日志，确认流量走链式代理"
     echo "  journalctl -u sing-box -f | grep ${CHAIN_ROUTE_TAG}"
     echo ""
 }
 
-# ---- 涓昏彍鍗?----
+# ---- 主菜单 ----
 chain_proxy_menu() {
     _check_root
     while true; do
         echo ""
-        echo -e "${CYAN}鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽${NC}"
-        echo -e "${CYAN}鈺?      馃敆 閾惧紡浠ｇ悊绠＄悊 (Chain AI)    鈺?{NC}"
-        echo -e "${CYAN}鈺犫晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暎${NC}"
-        echo -e "${CYAN}鈺?{NC}  1. 娣诲姞涓嬩竴璺充唬鐞?                 ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺?{NC}  2. 鏌ョ湅鐘舵€?& 璺敱璇︽儏             ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺?{NC}  3. 绠＄悊鍒嗘祦鍩熷悕                    ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺?{NC}  4. 鍚敤 / 绂佺敤閾惧紡浠ｇ悊              ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺?{NC}  5. 鍒犻櫎閾惧紡浠ｇ悊                     ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺?{NC}  6. 璺敱娴嬭瘯鍛戒护                     ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺?{NC}  0. 杩斿洖涓昏彍鍗?                      ${CYAN}鈺?{NC}"
-        echo -e "${CYAN}鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆${NC}"
+        echo -e "${CYAN}╔══════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║       🔗 链式代理管理 (Chain AI)    ║${NC}"
+        echo -e "${CYAN}╠══════════════════════════════════════╣${NC}"
+        echo -e "${CYAN}║${NC}  1. 添加下一跳代理                  ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}  2. 查看状态 & 路由详情             ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}  3. 管理分流域名                    ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}  4. 启用 / 禁用链式代理              ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}  5. 删除链式代理                     ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}  6. 路由测试命令                     ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}  0. 返回主菜单                       ${CYAN}║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════╝${NC}"
         echo ""
-        read -rp "璇烽€夋嫨 [0-6]: " choice
+        read -rp "请选择 [0-6]: " choice
 
         case "$choice" in
             1) _chain_add_node ;;
@@ -542,12 +555,12 @@ chain_proxy_menu() {
             5) _chain_remove ;;
             6) _chain_test_info ;;
             0) return 0 ;;
-            *) _warn "璇疯緭鍏?0-6 涔嬮棿鐨勬暟瀛椼€? ;;
+            *) _warn "请输入 0-6 之间的数字。" ;;
         esac
     done
 }
 
-# ---- 鐙珛杩愯鍏ュ彛 ----
+# ---- 独立运行入口 ----
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     chain_proxy_menu "$@"
 fi
