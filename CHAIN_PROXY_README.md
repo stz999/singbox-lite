@@ -1,64 +1,69 @@
-# 閾惧紡浠ｇ悊妯″潡 - 閮ㄧ讲璇存槑
+# 链式代理模块 - 部署说明
 
-## 鏂囦欢
+## 文件
 
-- `chain_proxy.sh` 鈥?閾惧紡浠ｇ悊鐙珛妯″潡锛屽彲鍗曠嫭杩愯涔熷彲琚?singbox.sh 璋冪敤
+- `chain_proxy.sh` — 链式代理独立模块，可单独运行也可被 singbox.sh 调用
 
-## 閮ㄧ讲姝ラ
+## 部署步骤
 
-### 1. 涓婁紶鏂囦欢鍒?VPS
+### 1. 上传文件到 VPS
 
 ```bash
-# 灏?chain_proxy.sh 涓婁紶鍒颁笌 singbox.sh 鍚岀骇鐩綍
+# 将 chain_proxy.sh 上传到与 singbox.sh 同级目录
 scp chain_proxy.sh root@<VPS_IP>:/root/
-# 鎴栧湪 VPS 涓婄洿鎺ヤ笅杞?curl -O https://raw.githubusercontent.com/<浣犵殑fork>/singbox-lite/main/chain_proxy.sh
+# 或在 VPS 上直接下载
+curl -O https://raw.githubusercontent.com/<你的fork>/singbox-lite/main/chain_proxy.sh
 ```
 
-### 2. 璧嬩簣鎵ц鏉冮檺
+### 2. 赋予执行权限
 
 ```bash
 chmod +x /root/chain_proxy.sh
 ```
 
-### 3. 闆嗘垚鍒?singbox.sh 涓昏彍鍗?
-缂栬緫 `singbox.sh`锛屾壘鍒般€岃繘闃跺姛鑳姐€嶈彍鍗曞尯鍩燂紝娣诲姞绗?19 椤广€?
-**鏌ユ壘浣嶇疆鐨勭嚎绱?*锛堝湪 singbox.sh 涓悳绱級锛?```
-grep -n "杩涢樁鍔熻兘\|19\|\"18\"" singbox.sh
+### 3. 集成到 singbox.sh 主菜单
+
+编辑 `singbox.sh`，找到「进阶功能」菜单区域，添加第 19 项。
+
+**查找位置的线索**（在 singbox.sh 中搜索）：
+```
+grep -n "进阶功能\|19\|\"18\"" singbox.sh
 ```
 
-**娣诲姞浣嶇疆**锛氬湪銆岃繘闃跺姛鑳姐€嶈彍鍗曠殑 case 鍒嗘敮涓紝鏈€鍚庝竴涓€夐」锛堥€氬父鏄?`18)` 鎴栫被浼硷級涔嬪悗銆乣0)` 杩斿洖涔嬪墠锛屾坊鍔狅細
+**添加位置**：在「进阶功能」菜单的 case 分支中，最后一个选项（通常是 `18)` 或类似）之后、`0)` 返回之前，添加：
 
 ```bash
-# 鍦?"echo" 鎵撳嵃鑿滃崟鍖哄煙娣诲姞涓€琛岋細
-echo -e "${CYAN}鈺?{NC} 19. 閾惧紡浠ｇ悊 鈥?AI 娴侀噺鍒嗘祦               ${CYAN}鈺?{NC}"
+# 在 "echo" 打印菜单区域添加一行：
+echo -e "${CYAN}║${NC} 19. 链式代理 — AI 流量分流               ${CYAN}║${NC}"
 
-# 鍦?case "$choice" 鍖哄煙娣诲姞锛?19)
+# 在 case "$choice" 区域添加：
+19)
     bash "$SCRIPT_DIR/chain_proxy.sh"
     ;;
 ```
 
-**鍏蜂綋娣诲姞绀轰緥**锛堝亣璁惧綋鍓嶆渶澶х紪鍙锋槸 18锛夛細
+**具体添加示例**（假设当前最大编号是 18）：
 
 ```bash
-# 1. 鎵惧埌鑿滃崟鎵撳嵃鍖哄煙锛堜竴鍫?echo 琛岋級锛屽湪鏈€鍚庡姞鍏ワ細
-#    echo -e "${CYAN}鈺?{NC} 19. 閾惧紡浠ｇ悊 鈥?AI 娴侀噺鍒嗘祦               ${CYAN}鈺?{NC}"
+# 1. 找到菜单打印区域（一堆 echo 行），在最后加入：
+#    echo -e "${CYAN}║${NC} 19. 链式代理 — AI 流量分流               ${CYAN}║${NC}"
 
-# 2. 鎵惧埌 case 鍒嗘敮锛屽湪 ;; 鍜?0) 涔嬮棿鍔犲叆:
+# 2. 找到 case 分支，在 ;; 和 0) 之间加入:
             19)
                 bash "$SCRIPT_DIR/chain_proxy.sh"
                 ;;
 ```
 
-### 4. 閲嶅惎鑴氭湰
+### 4. 重启脚本
 
 ```bash
 ./singbox.sh
-# 杩涘叆杩涢樁鍔熻兘 鈫?閫夋嫨 19 閾惧紡浠ｇ悊
+# 进入进阶功能 → 选择 19 链式代理
 ```
 
 ---
 
-## 鐙珛杩愯
+## 独立运行
 
 ```bash
 ./chain_proxy.sh
@@ -66,66 +71,76 @@ echo -e "${CYAN}鈺?{NC} 19. 閾惧紡浠ｇ悊 鈥?AI 娴侀噺鍒嗘祦       
 
 ---
 
-## 鍔熻兘娓呭崟
+## 功能清单
 
-| 閫夐」 | 鍔熻兘 |
+| 选项 | 功能 |
 |------|------|
-| 1. 娣诲姞涓嬩竴璺充唬鐞?| 绮樿创 ss:// vless:// vmess:// trojan:// hy2:// socks5:// 閾炬帴 |
-| 2. 鏌ョ湅鐘舵€?| 鏄剧ず褰撳墠 outbound銆佽矾鐢辫鍒欐暟銆佽鐩栧煙鍚嶅垪琛?|
-| 3. 绠＄悊鍒嗘祦鍩熷悕 | 杩藉姞/鍒犻櫎鑷畾涔夊煙鍚嶏紙鏈浼氳瘽鏈夋晥锛?|
-| 4. 鍚敤/绂佺敤 | 涓€閿紑鍏筹紝浠呯Щ闄よ矾鐢辫鍒欙紝鑺傜偣淇濈暀 |
-| 5. 鍒犻櫎閾惧紡浠ｇ悊 | 瀹屽叏娓呴櫎 outbound + 璺敱瑙勫垯 |
-| 6. 璺敱娴嬭瘯鍛戒护 | 鏄剧ず curl 娴嬭瘯鍜屾棩蹇楄繃婊ゅ懡浠?|
+| 1. 添加下一跳代理 | 粘贴 ss:// vless:// vmess:// trojan:// hy2:// socks5:// 链接 |
+| 2. 查看状态 | 显示当前 outbound、路由规则数、覆盖域名列表 |
+| 3. 管理分流域名 | 追加/删除自定义域名（本次会话有效） |
+| 4. 启用/禁用 | 一键开关，仅移除路由规则，节点保留 |
+| 5. 删除链式代理 | 完全清除 outbound + 路由规则 |
+| 6. 路由测试命令 | 显示 curl 测试和日志过滤命令 |
 
 ---
 
-## 宸ヤ綔娴佺▼
+## 工作流程
 
 ```
-鐢ㄦ埛绮樿创涓嬩竴璺抽摼鎺?       鈫?parser.sh 瑙ｆ瀽涓?sing-box outbound
-       鈫?鍐欏叆 config.json (outbounds)
-       鈫?娉ㄥ叆 route.rules锛圓I 鍩熷悕 鈫?chain-ai锛?       鈫?閲嶅惎 sing-box 鐢熸晥
+用户粘贴下一跳链接
+       ↓
+parser.sh 解析为 sing-box outbound
+       ↓
+写入 config.json (outbounds)
+       ↓
+注入 route.rules（AI 域名 → chain-ai）
+       ↓
+重启 sing-box 生效
 ```
 
-## Sing-box 閰嶇疆缁撴瀯
+## Sing-box 配置结构
 
 ```jsonc
-// 鏂板鐨?outbound
+// 新增的 outbound
 {
   "tag": "chain-ai",
-  "type": "shadowsocks",        // 鏍规嵁閾炬帴鑷姩妫€娴?  "server": "1.2.3.4",
+  "type": "shadowsocks",        // 根据链接自动检测
+  "server": "1.2.3.4",
   "server_port": 8388,
   "method": "2022-blake3-aes-256-gcm",
   "password": "xxx",
-  "detour": "direct-out"       // 鐩磋繛涓嬩竴璺筹紝閬垮厤閫掑綊
+  "detour": "direct-out"       // 直连下一跳，避免递归
 }
 
-// 鏂板鐨?route rules锛堟彃鍏ュ埌 rules 鏁扮粍鏈€鍓嶉潰锛屼紭鍏堢骇鏈€楂橈級
+// 新增的 route rules（插入到 rules 数组最前面，优先级最高）
 [
   {"domain_suffix": ["google.com"], "outbound": "chain-ai"},
   {"domain_suffix": ["googleapis.com"], "outbound": "chain-ai"},
-  // ... 40+ AI 鍩熷悕 ...
+  // ... 40+ AI 域名 ...
   {"domain_keyword": ["gemini", "generativelanguage", ...], "outbound": "chain-ai"}
 ]
 ```
 
-## 婵€杩涚増 AI 鍩熷悕瑕嗙洊
+## 激进版 AI 域名覆盖
 
-### 鍏ㄥ悗缂€瑕嗙洊
-- Google 鍏ㄥ妗跺叏瀛愬煙: google.com, googleapis.com, gstatic.com, googleusercontent.com, 1e100.net
+### 全后缀覆盖
+- Google 全家桶全子域: google.com, googleapis.com, gstatic.com, googleusercontent.com, 1e100.net
 - Android GMS/Firebase: firebaseio.com, firebaseapp.com, app-measurement.com, gvt2.com, gvt3.com
 - OpenAI: openai.com, chatgpt.com, oaistatic.com, sora.com
 - Anthropic: anthropic.com, claude.ai
 - Google AI: deepmind.com, bard.google.com, aistudio.google.com, ai.google.dev, makersuite.google.com
-- 鍏朵粬 AI: perplexity.ai, groq.com, deepseek.com, openrouter.ai, cohere.com, together.ai, mistral.ai, x.ai, poe.com, you.com, phind.com, character.ai
-- AI 缂栫▼: githubcopilot.com, cursor.sh, windsurf.com, codeium.com, tabnine.com, sourcegraph.com
+- 其他 AI: perplexity.ai, groq.com, deepseek.com, openrouter.ai, cohere.com, together.ai, mistral.ai, x.ai, poe.com, you.com, phind.com, character.ai
+- AI 编程: githubcopilot.com, cursor.sh, windsurf.com, codeium.com, tabnine.com, sourcegraph.com
 
-### 鍏抽敭璇嶅厹搴?gemini, generativelanguage, alkalimakersuite, proactiveagent, deepmind, bard, notebooklm, colab
+### 关键词兜底
+gemini, generativelanguage, alkalimakersuite, proactiveagent, deepmind, bard, notebooklm, colab
 
 ---
 
-## 娉ㄦ剰浜嬮」
+## 注意事项
 
-1. **蹇呴』鍏堝畨瑁呭ソ sing-box** 骞跺凡鏈?config.json
-2. **parser.sh 蹇呴』瀛樺湪** 浜庡悓鐩綍锛坈hain_proxy.sh 浼氳皟鐢ㄥ畠瑙ｆ瀽閾炬帴锛?3. **閲嶅惎 sing-box 鍚庢墠鐢熸晥**锛堣剼鏈細璇㈤棶鏄惁鑷姩閲嶅惎锛?4. **澶囦唤鑷姩鐢熸垚** `config.json.chain.bak`
-5. **閲嶅惎鍚庤鍒欐彃鍏ュ埌 rules 鏈€鍓嶉潰**锛屼紭鍏堢骇楂樹簬鍏朵粬璺敱瑙勫垯
+1. **必须先安装好 sing-box** 并已有 config.json
+2. **parser.sh 必须存在** 于同目录（chain_proxy.sh 会调用它解析链接）
+3. **重启 sing-box 后才生效**（脚本会询问是否自动重启）
+4. **备份自动生成** `config.json.chain.bak`
+5. **重启后规则插入到 rules 最前面**，优先级高于其他路由规则
